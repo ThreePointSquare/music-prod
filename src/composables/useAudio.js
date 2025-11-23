@@ -50,32 +50,57 @@ export function useAudio() {
   }
 
   async function play(tracks, tempo) {
-    await initAudio()
-    Tone.Transport.bpm.value = tempo
-    Tone.Transport.cancel()
+    try {
+      await initAudio()
 
-    tracks.forEach(track => {
-      if (track.mute) return
-      setupTrack(track)
-      const synth = synths.value[track.id]
+      Tone.Transport.bpm.value = tempo
+      Tone.Transport.cancel()
+      Tone.Transport.position = 0
 
-      track.notes.forEach(note => {
-        const timeInBeats = note.start / 4
-        const durationInBeats = note.duration / 4
-        const velocity = note.velocity / 127
+      console.log(`Starting playback at ${tempo} BPM`)
 
-        Tone.Transport.schedule((time) => {
-          synth.triggerAttackRelease(note.note, durationInBeats + 'n', time, velocity)
-        }, timeInBeats + 'n')
+      tracks.forEach(track => {
+        if (track.mute) return
+
+        setupTrack(track)
+        const synth = synths.value[track.id]
+
+        console.log(`Scheduling ${track.notes.length} notes for track: ${track.name}`)
+
+        track.notes.forEach(note => {
+          // note.start is in beats (quarter notes)
+          // Convert to bars:beats:sixteenths notation for Transport.schedule
+          const bar = Math.floor(note.start / 4)
+          const beat = note.start % 4
+          const position = `${bar}:${beat}:0`
+
+          // note.duration is in beats (quarter notes)
+          // Convert to seconds based on current tempo
+          const durationInSeconds = (note.duration * 60) / tempo
+
+          const velocity = note.velocity / 127
+
+          console.log(`Scheduling note ${note.note} at ${position} for ${durationInSeconds}s`)
+
+          Tone.Transport.schedule((time) => {
+            synth.triggerAttackRelease(note.note, durationInSeconds, time, velocity)
+          }, position)
+        })
       })
-    })
 
-    Tone.Transport.start()
+      Tone.Transport.start()
+      console.log('Transport started')
+    } catch (error) {
+      console.error('Error in play():', error)
+      throw error
+    }
   }
 
   function stop() {
     Tone.Transport.stop()
     Tone.Transport.cancel()
+    Tone.Transport.position = 0
+    console.log('Transport stopped and reset')
   }
 
   function dispose() {
