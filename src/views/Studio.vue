@@ -41,6 +41,14 @@
           <Upload class="w-4 h-4 inline mr-2" />
           Upload Audio
         </button>
+
+        <button
+          @click="showGenerateModal = true"
+          class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 rounded-lg font-medium transition-all shadow-lg shadow-cyan-500/20"
+        >
+          <Sparkles class="w-4 h-4 inline mr-2" />
+          Generate Music
+        </button>
       </div>
     </div>
 
@@ -257,24 +265,126 @@
         </button>
       </div>
     </div>
+
+    <!-- Generate Music Modal -->
+    <div v-if="showGenerateModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50" @click="showGenerateModal = false">
+      <div class="glass rounded-2xl p-8 max-w-lg w-full" @click.stop>
+        <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+              <Sparkles class="w-6 h-6" />
+            </div>
+            <h2 class="text-2xl font-bold">AI Music Generator</h2>
+          </div>
+          <button @click="showGenerateModal = false" class="p-2 hover:bg-white/5 rounded-lg">
+            <X class="w-5 h-5" />
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-2">Describe your music</label>
+            <textarea
+              v-model="musicPrompt"
+              placeholder="e.g., A cheerful piano melody with upbeat rhythm..."
+              class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 h-24 resize-none focus:outline-none focus:border-cyan-500/50"
+            ></textarea>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium mb-2">Style (optional)</label>
+              <select
+                v-model="musicStyle"
+                class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 focus:outline-none focus:border-cyan-500/50"
+              >
+                <option value="">Any style</option>
+                <option value="classical">Classical</option>
+                <option value="jazz">Jazz</option>
+                <option value="electronic">Electronic</option>
+                <option value="pop">Pop</option>
+                <option value="rock">Rock</option>
+                <option value="ambient">Ambient</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium mb-2">Tempo (BPM)</label>
+              <input
+                v-model.number="generateTempo"
+                type="number"
+                min="60"
+                max="200"
+                class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 focus:outline-none focus:border-cyan-500/50"
+              />
+            </div>
+          </div>
+
+          <button
+            @click="handleGenerateMusic"
+            :disabled="isGenerating || !musicPrompt"
+            class="w-full px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 rounded-lg font-medium transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span v-if="isGenerating" class="flex items-center justify-center gap-2">
+              <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+              Generating...
+            </span>
+            <span v-else>Generate Music</span>
+          </button>
+
+          <p class="text-xs text-gray-400 text-center">
+            AI will generate 2-3 tracks with musical notes based on your prompt
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error/Success Toast -->
+    <div v-if="toastMessage" class="fixed bottom-6 right-6 z-50 glass rounded-xl p-4 shadow-2xl animate-fade-in max-w-sm">
+      <div class="flex items-start gap-3">
+        <div :class="['w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0', toastType === 'error' ? 'bg-red-500/20' : 'bg-green-500/20']">
+          <AlertCircle v-if="toastType === 'error'" class="w-5 h-5 text-red-400" />
+          <CheckCircle v-else class="w-5 h-5 text-green-400" />
+        </div>
+        <div class="flex-1">
+          <p class="font-medium mb-1">{{ toastType === 'error' ? 'Error' : 'Success' }}</p>
+          <p class="text-sm text-gray-400">{{ toastMessage }}</p>
+        </div>
+        <button @click="toastMessage = ''" class="p-1 hover:bg-white/5 rounded">
+          <X class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { Play, Square, Plus, Upload, Volume2, X } from 'lucide-vue-next'
+import { Play, Square, Plus, Upload, Volume2, X, Sparkles, AlertCircle, CheckCircle } from 'lucide-vue-next'
 import { useTracksStore } from '@/stores/tracks'
 import { useAudio } from '@/composables/useAudio'
 import { useTranscription } from '@/composables/useTranscription'
+import { useGeneration } from '@/composables/useGeneration'
 
 const tracksStore = useTracksStore()
 const { play, stop } = useAudio()
 const { transcribeAudio, transcribeURL } = useTranscription()
+const { generateMusic, isGenerating } = useGeneration()
 
 const isPlaying = ref(false)
 const showUploadModal = ref(false)
+const showGenerateModal = ref(false)
 const urlInput = ref('')
 const fileInput = ref(null)
+
+// Music generation
+const musicPrompt = ref('')
+const musicStyle = ref('')
+const generateTempo = ref(120)
+
+// Toast notifications
+const toastMessage = ref('')
+const toastType = ref('success')
 
 const selectedNote = computed(() => {
   if (!tracksStore.selectedNoteId) return null
@@ -316,9 +426,26 @@ async function handlePlay() {
     stop()
     isPlaying.value = false
   } else {
-    await play(tracksStore.tracks, tracksStore.tempo)
-    isPlaying.value = true
+    if (tracksStore.tracks.length === 0) {
+      showToast('No tracks to play. Load demo or create a track first.', 'error')
+      return
+    }
+    try {
+      await play(tracksStore.tracks, tracksStore.tempo)
+      isPlaying.value = true
+    } catch (err) {
+      console.error('Playback error:', err)
+      showToast('Audio playback failed. Check console for details.', 'error')
+    }
   }
+}
+
+function showToast(message, type = 'success') {
+  toastMessage.value = message
+  toastType.value = type
+  setTimeout(() => {
+    toastMessage.value = ''
+  }, 5000)
 }
 
 function addTrack(instrument) {
@@ -378,8 +505,39 @@ async function handleURLSubmit() {
     tracks.forEach(track => tracksStore.addTrack(track))
     showUploadModal.value = false
     urlInput.value = ''
+    showToast('Audio transcribed successfully!', 'success')
   } catch (err) {
     console.error(err)
+    showToast('Transcription failed. Check API keys and try again.', 'error')
+  }
+}
+
+async function handleGenerateMusic() {
+  if (!musicPrompt.value) return
+
+  try {
+    const composition = await generateMusic(musicPrompt.value, {
+      style: musicStyle.value,
+      tempo: generateTempo.value
+    })
+
+    // Load the generated tracks
+    if (composition.tracks && composition.tracks.length > 0) {
+      composition.tracks.forEach(track => tracksStore.addTrack(track))
+      if (composition.tempo) {
+        tracksStore.tempo = composition.tempo
+      }
+      showGenerateModal.value = false
+      musicPrompt.value = ''
+      musicStyle.value = ''
+      generateTempo.value = 120
+      showToast(`Generated ${composition.tracks.length} tracks successfully!`, 'success')
+    } else {
+      showToast('No tracks generated. Try a different prompt.', 'error')
+    }
+  } catch (err) {
+    console.error(err)
+    showToast('Music generation failed. Check API key and try again.', 'error')
   }
 }
 </script>
